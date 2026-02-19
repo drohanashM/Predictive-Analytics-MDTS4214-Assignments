@@ -1,0 +1,229 @@
+---
+title: "Problem Set 4"
+author: "Drohanash Majumdar, 704"
+date: "2026-02-16"
+output: word_document
+---
+```{r, include=FALSE}
+library(MASS)
+library(ISLR)
+library(car)
+library(stargazer)
+```
+
+
+## Problem to demonstrate the utility of nonlinear regression over linear regression.
+
+Get the fgl data set from “MASS” library.
+```{r}
+df1 = fgl
+head(df1)
+```
+
+###### **(a) Considering the refractive index (RI) of “Vehicle Window glass” as the variable of interest and assuming linearity of regression, run multiple linear regression of RI on different metallic oxides. From the p value, report which metallic oxide best explains the refractive index.**
+```{r}
+df1_subset = subset(df1, type == "Veh")
+model = lm(RI ~ Na + Mg + Al + Si + K + Ca + Ba + Fe, data = df1_subset)
+summary(model)
+stargazer(model, type = "html")
+summary(model)$coefficients
+```
+
+**Conclusion :** From the p-values, it is clear that Iron (Fe) oxide has the lowest p-value and hence best explains the refractive index.
+
+-----------------------------------------------------------------------------------------------
+
+###### **(b) Run a simple linear regression of RI on the best predictor chosen in (a)**.
+```{r}
+fit_simple = lm(RI ~ Fe, data = df1_subset)
+summary(fit_simple)
+stargazer(fit_simple, type = "html")
+```
+
+-----------------------------------------------------------------------------------------------
+
+###### **(c) Can you further improve the regression of the refractive index of “Vehicle Window glass” on the predictor chosen by you in part (a)? Give the new fitted model and compare its performance with the model in (b)**.
+```{r}
+fit_quad = lm(RI ~ Fe + I(Fe^2), data = df1_subset) #adding a quadratic term
+
+summary(fit_quad)
+
+```
+
+<u>Comparison</u> : 
+```{r}
+cat("R^2 value for simple model : ",summary(fit_simple)$r.squared)
+cat("R^2 value for quadratic model : ",summary(fit_quad)$r.squared)
+```
+
+**Conclusion :** The quadratic model improves the fit compared to the simple linear model, as indicated by the higher R² and lower residual standard error. The overall model becomes statistically significant at the 5% level. However, the individual coefficients are not strongly significant, suggesting only moderate evidence of a nonlinear relationship between RI and Fe.
+
+## Problem to demonstrate multicollinearity.
+
+Consider the Credit data in the ISLR library. Choose balance as the response and Age, Limit and Rating as the predictors.
+```{r}
+df2 = Credit
+head(df2)
+```
+
+###### **(a) Make a scatter plot of (i) Age versus Limit and (ii) Rating Versus Limit. Comment on the scatter plot**.
+```{r}
+par(mfrow = c(1, 2))
+
+plot(df2$Age, df2$Limit, main = "Age vs Limit", xlab = "Age", ylab = "Credit Limit")
+
+plot(df2$Rating, df2$Limit, main = "Rating vs Limit", xlab = "Rating", ylab = "Credit Limit")
+
+par(mfrow = c(1, 1))
+```
+
+**Comments : ** 
+i. <u>Age vs Limit</u>
+
+- Type of relationship: No clear linear relationship
+
+- Direction: No clear direction (neither upward nor downward trend)
+
+- Strength: Very weak
+
+The points are widely scattered without any visible pattern. This suggests that Age does not strongly explain Credit Limit.
+
+(ii) <u>Rating vs Limit</u>
+
+- Type of relationship: Strong linear relationship
+
+- Direction: Positive
+
+- Strength: Very strong
+
+The points lie almost perfectly along a straight upward-sloping line. This indicates that as Rating increases, Limit increases almost proportionally. 
+
+-----------------------------------------------------------------------------------------------
+
+###### **(b) Run three separate regressions: (i) Balance on Age and Limit (ii) Balance on Age, Rating and Limit (iii) Balance on Rating and Limit. Present all the regression output in a single table using stargazer. What is the marked difference that you can observe from the output**?
+```{r}
+model21 <- lm(Balance ~ Age + Limit, data = df2)
+
+model22 <- lm(Balance ~ Age + Rating + Limit, data = df2)
+
+model23 <- lm(Balance ~ Rating + Limit, data = df2)
+
+stargazer(model21, model22, model23, type = "html", title = "Regression Results: Balance as Response", column.labels = c("Age + Limit", "Age + Rating + Limit", "Rating + Limit"))
+```
+
+**Observations : ** The key difference:
+
+1. In model (i), Limit is highly significant.
+
+2. In model (iii), Rating is highly significant.
+
+3. But in model (ii) **(both included)** :
+
+- One of them often becomes insignificant.
+
+- Standard errors increase.
+
+- Coefficient signs or magnitudes may shift.
+
+This happens because Rating and Limit are highly correlated. That is multicollinearity.
+
+-----------------------------------------------------------------------------------------------
+
+###### **(c) Calculate the variance inflation factor (VIF) and comment on multicollinearity**.
+```{r}
+vif_values <- vif(model22)
+print(vif_values)
+
+```
+
+**Comment on multicolinearity : ** There is severe multicollinearity between Rating and Limit, as indicated by extremely high VIF values (≈160). Age shows no multicollinearity. The instability in the regression coefficients when both Rating and Limit are included is due to this strong linear dependence.
+
+## Problem to demonstrate the detection of outlier, leverage and influential points.
+
+Attach “Boston” data from MASS library in R. Select median value of owneroccupied homes, as the response and per capita crime rate, nitrogen oxides concentration, proportion of blacks and percentage of lower status of the population as predictors. The objective is to fit a multiple linear regression model of the response on the predictors. With reference to this problem, detect outliers, leverage points and influential points if any.
+```{r}
+df3 = Boston
+df3_subset = df3[, c("medv", "crim", "nox", "black", "lstat")]
+head(df3_subset)
+
+boston_model = lm(medv ~ crim + nox + black + lstat, data = df3_subset)
+summary(boston_model)
+```
+
+**Residual Plot :** 
+```{r}
+std_res = rstandard(boston_model)
+
+plot(boston_model$fitted.values, std_res, xlab = "Fitted Values", ylab = "Standardized Residuals", main = "Residual Plot (Standardized Residuals)")
+
+abline(h = c(-2.5, 2.5), col = "red", lty = 2)
+```
+
+**Calculation for Outliers :** 
+```{r}
+outliers <- which(abs(std_res) > 2.5)
+
+data.frame(Observation = outliers, Standardized_Residual = std_res[outliers])
+
+```
+
+**Consistency Check :** The graphical method (residual plot) and the numerical method (|standardized residual| > 2.5) identify the same observations as outliers. Hence, the two approaches are consistent.
+
+**Leverage Points :**
+```{r}
+n = nrow(Boston)
+p = length(coef(boston_model))   # includes intercept
+
+H = hatvalues(boston_model)
+
+threshold_lev = 2*p/n
+threshold_lev
+
+leverage_points = which(H > threshold_lev)
+
+leverage_points
+
+```
+
+**Plot :**
+```{r}
+plot(H, type = "h", main = "Leverage Values (Hat Matrix Diagonal)", ylab = "Hii")
+
+abline(h = threshold_lev, col = "red", lty = 2)
+
+```
+
+**Comment :** The leverage plot shows that a small number of observations exceed the leverage threshold, indicating the presence of high leverage points. Most observations have low leverage. These high leverage points may potentially influence the regression model.
+
+**Influential Points (Cook's Distance) :**
+```{r}
+cooks_d = cooks.distance(model)
+
+threshold_cook = 4/n
+threshold_cook
+
+influential_points = which(cooks_d > threshold_cook)
+
+influential_points
+```
+
+**Plot :**
+```{r}
+plot(cooks_d, type = "h", main = "Cook's Distance", ylab = "Cook's D")
+
+abline(h = threshold_cook, col = "red", lty = 2)
+```
+
+**Comment :** The Cook’s distance plot indicates the presence of a few influential observations, with one observation having particularly high influence. Most observations have negligible influence. The highly influential points may substantially affect the regression coefficients and should be examined further.
+
+**Effect of Removing Influential Points :**
+```{r}
+model_reduced = lm(medv ~ crim + nox + black + lstat, data = Boston[-influential_points, ])
+
+summary(model_reduced)
+```
+
+<u>Comparison to original model</u> : After removing influential observations, the regression coefficients and overall model fit remain broadly similar. Although some minor changes in magnitude and significance occur, the general conclusions remain unchanged. Therefore, the regression model is reasonably robust to influential observations.
+
+
+
