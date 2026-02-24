@@ -190,3 +190,4 @@ print(results_nl)
 ```
 
 **Conclusion:** With a nonlinear data-generating process, KNN with a small k outperforms linear regression, since KNN can capture nonlinear patterns. Linear regression has higher MSE. This demonstrates the utility of KNN over least squares when the true relationship is nonlinear.
+
