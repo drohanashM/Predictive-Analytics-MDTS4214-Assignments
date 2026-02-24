@@ -1,0 +1,192 @@
+---
+title: "Assignment 5 Solutions"
+author: "Drohanash Majumdar, 704"
+date: "2026-02-24"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(ggplot2)
+library(MASS)
+library(caret)
+```
+
+**Problem to demonstrate the role of qualitative (ordinal) predictors in addition to quantitative predictors in multiple linear regression.**
+
+Consider “diamonds” data set in R. It is in the ggplot2 package. Make a list of all the ordinal categorical variables. Identify the response.
+
+The ordinal categorical variables are **cut** (Fair < Good < Very Good < Premium < Ideal), **color** (D < E < F < G < H < I < J), and **clarity** (I1 < SI2 < SI1 < VS2 < VS1 < VVS2 < VVS1 < IF). The response variable is **price**.
+
+(a) Linear regression of price on cut
+
+```{r}
+contrasts(diamonds$cut) = contr.sdif(5)
+ord_mod = lm(price ~ cut, data = diamonds)
+summary(ord_mod)
+```
+
+**Fitted model:** The fitted model is:
+
+$$\hat{price} = 4062.24 - 429.89 \cdot C_{21} + 52.90 \cdot C_{32} + 602.50 \cdot C_{43} - 1126.72 \cdot C_{54}$$
+
+where the coefficients represent successive differences between adjacent cut levels (Good-Fair, Very Good-Good, Premium-Very Good, Ideal-Premium).
+
+(b) Test: Is expected price of Premium cut significantly different from Ideal cut?
+
+```{r}
+lvl = as.numeric(diamonds$cut)
+code_fun = function(x) {
+  if(x-5==0) {
+    return(c(0,0,0,0))
+  } else if(x-5==-1) {
+    return(c(1,0,0,0))
+  } else if(x-5==-2) {
+    return(c(1,1,0,0))
+  } else if(x-5==-3) {
+    return(c(1,1,1,0))
+  } else {
+    return(c(1,1,1,1))
+  }
+}
+coded_prep = t(sapply(lvl, code_fun))
+colnames(coded_prep) = c("Premium", "Very_Good", "Good", "Fair")
+diamonds2 = cbind(diamonds, coded_prep)
+ord_mod1 = lm(price ~ Premium + Very_Good + Good + Fair, data = diamonds2)
+summary(ord_mod1)
+```
+
+The coefficient of `Premium` tests whether Premium cut differs from Ideal cut. The t-test p-value for `Premium` indicates it **is** significantly different from Ideal cut (p < 0.05).
+
+(c) Expected price of a diamond of Ideal cut
+
+```{r}
+ideal_price = coef(ord_mod1)["(Intercept)"]
+cat("Expected price of Ideal cut diamond: $", round(ideal_price, 2))
+```
+
+(d) Add "table" as predictor
+
+```{r}
+ord_mod2 = lm(price ~ Premium + Very_Good + Good + Fair + table, data = diamonds2)
+summary(ord_mod2)
+```
+
+**Fitted model:**
+
+$$\hat{price} = \hat{\beta}_0 + \hat{\beta}_1 \cdot Premium + \hat{\beta}_2 \cdot VeryGood + \hat{\beta}_3 \cdot Good + \hat{\beta}_4 \cdot Fair + \hat{\beta}_5 \cdot table$$
+
+Coefficients : $\hat{\beta}_0 = -6563.672$, $\hat{\beta}_1 = 626.220$, $\hat{\beta}_2 = -461.015$, $\hat{\beta}_3 = -185.162$, $\hat{\beta}_4 = 365.568$ and $\hat{\beta}_5 = 179.105$
+
+(e) Test significance of "table"
+
+From the summary above, the t-test for `table` shows its p-value. Since p < 0.05, then `table` is a significant predictor of diamond price.
+
+(f) Average estimated price for average table value, Fair cut
+
+```{r}
+avg_table = mean(diamonds2$table)
+cat("Average table value:", avg_table, "\n")
+
+# Fair cut: Premium=1, Very_Good=1, Good=1, Fair=1
+new_data = data.frame(Premium=1, Very_Good=1, Good=1, Fair=1, table=avg_table)
+pred_price = predict(ord_mod2, newdata=new_data)
+cat("Expected price (Fair cut, avg table): $", round(pred_price, 2))
+```
+
+---
+
+**Problem to demonstrate the utility of K nearest neighbour regression over least squares regression.**
+
+Setup: Generate data
+
+```{r}
+
+set.seed(123)
+n = 1000
+x1_ = rnorm(n, 0, 2)
+x2_ = rpois(n, 1.5)
+epi_ = rnorm(n, 0, 1)
+y_ = -2 + 1.4*x1_ - 2.6*x2_ + epi_
+
+data1 = data.frame(y_, x1_, x2_)
+train_data = data1[1:800, ]
+test_data  = data1[801:1000, ]
+```
+
+1. Multiple Linear Regression
+
+```{r}
+model_train = lm(y_ ~ x1_ + x2_, data = train_data)
+summary(model_train)
+
+pred_lm = predict(model_train, newdata = test_data)
+mse_lm = mean((pred_lm - test_data$y_)^2)
+cat("Linear Regression Test MSE:", round(mse_lm, 4))
+```
+
+2. KNN Regression for k = 1, 2, 5, 9, 15
+
+```{r}
+ks = c(1, 2, 5, 9, 15)
+mse_knn = numeric(length(ks))
+
+for (i in seq_along(ks)) {
+  fit = knnreg(y_ ~ x1_ + x2_, data = train_data, k = ks[i])
+  pred = predict(fit, test_data)
+  mse_knn[i] = mean((test_data$y_ - pred)^2)
+  cat("KNN k =", ks[i], "| Test MSE:", round(mse_knn[i], 4), "\n")
+}
+```
+
+<u>Comparison</u>
+
+```{r}
+results = data.frame(
+  Method = c("Linear Regression", paste0("KNN k=", ks)),
+  Test_MSE = round(c(mse_lm, mse_knn), 4)
+)
+print(results)
+```
+
+**Conclusion:** Since the true data-generating process is linear, linear regression outperforms KNN. As k increases, KNN MSE decreases (bias-variance tradeoff) but still exceeds linear regression. Linear regression is the better model here when the true relationship is linear.
+
+---
+
+Nonlinear Data Generating Process
+
+Now suppose:
+
+$$y_i = \frac{1}{-2 + 1.4x_{1i} - 2.6x_{2i} + 2.9x_{2i}^2} + 3.1\sin(x_{2i}) - 1.5x_{1i}x_{2i}^2 + \epsilon_i$$
+
+```{r}
+set.seed(123)
+y_nl = 1/(-2 + 1.4*x1_ - 2.6*x2_ + 2.9*x2_^2) + 3.1*sin(x2_) - 1.5*x1_*x2_^2 + epi_
+
+data_nl = data.frame(y_nl, x1_, x2_)
+train_nl = data_nl[1:800, ]
+test_nl  = data_nl[801:1000, ]
+
+# Linear regression
+lm_nl = lm(y_nl ~ x1_ + x2_, data = train_nl)
+pred_lm_nl = predict(lm_nl, newdata = test_nl)
+mse_lm_nl = mean((pred_lm_nl - test_nl$y_nl)^2)
+cat("Linear Regression Test MSE (nonlinear DGP):", round(mse_lm_nl, 4), "\n")
+
+# KNN
+mse_knn_nl = numeric(length(ks))
+for (i in seq_along(ks)) {
+  fit = knnreg(y_nl ~ x1_ + x2_, data = train_nl, k = ks[i])
+  pred = predict(fit, test_nl)
+  mse_knn_nl[i] = mean((test_nl$y_nl - pred)^2)
+  cat("KNN k =", ks[i], "| Test MSE:", round(mse_knn_nl[i], 4), "\n")
+}
+
+results_nl = data.frame(
+  Method = c("Linear Regression", paste0("KNN k=", ks)),
+  Test_MSE = round(c(mse_lm_nl, mse_knn_nl), 4)
+)
+print(results_nl)
+```
+
+**Conclusion:** With a nonlinear data-generating process, KNN with a small k outperforms linear regression, since KNN can capture nonlinear patterns. Linear regression has higher MSE. This demonstrates the utility of KNN over least squares when the true relationship is nonlinear.
