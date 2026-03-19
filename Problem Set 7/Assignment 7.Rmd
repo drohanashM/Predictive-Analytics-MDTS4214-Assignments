@@ -1,0 +1,85 @@
+---
+title: "Predictive Analytics: Problem Sets 7"
+author: "Drohanash Majumdar, 704"
+date: "2026-03-19"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+if (!require(ISLR)) install.packages("ISLR")
+if (!require(leaps)) install.packages("leaps")
+if (!require(glmnet)) install.packages("glmnet")
+
+library(ISLR)
+library(leaps)
+library(glmnet)
+```
+
+# Shrinkage Methods : Comparison of least squares, ridge regression, LASSO and Elastic Net
+
+You would be working with Hitters data set available in the ISLR library. You have to predict the Salary based on all available variables. First make sure that you have deleted all rows with one or more missing values.
+```{r ps7-setup}
+data(Hitters)
+Hitters <- na.omit(Hitters)
+```
+
+1. Split the data set into a training set and a test set randomly keeping 100 observations in test set and remaining in the training set.
+```{r}
+set.seed(123)
+test_idx  <- sample(1:nrow(Hitters), 100)
+train7    <- Hitters[-test_idx, ]
+test7     <- Hitters[test_idx, ]
+
+X_train <- model.matrix(Salary ~ ., train7)[, -1]
+y_train <- train7$Salary
+X_test  <- model.matrix(Salary ~ ., test7)[, -1]
+y_test  <- test7$Salary
+
+cat("Train size:", nrow(train7), "| Test size:", nrow(test7), "\n")
+```
+
+2. Train the model using least squares and report the train MSE and test MSE.
+```{r ps7-ols}
+ols_fit   <- lm(Salary ~ ., data = train7)
+ols_train <- predict(ols_fit, train7)
+ols_test  <- predict(ols_fit, test7)
+
+ols_train_mse <- mean((y_train - ols_train)^2)
+ols_test_mse  <- mean((y_test  - ols_test)^2)
+
+cat("OLS Train MSE:", round(ols_train_mse, 2), "\n")
+cat("OLS Test MSE: ", round(ols_test_mse,  2), "\n")
+```
+
+Fit ridge regression models on the training set, with grid values of λ. Report the following: 
+
+(i) the dimension of the coefficient matrix so obtained.
+
+(ii) The l2 norm of the regression coefficients corresponding to the 50th and 60th choice of λ. Comment on the output.
+
+(iii) Test MSE corresponding to these two choices of λ.
+```{r ps7-ridge}
+# Grid of lambda values
+lambda_grid <- 10^seq(10, -2, length = 100)
+
+ridge_fit <- glmnet(X_train, y_train, alpha = 0, lambda = lambda_grid)
+
+# (i) Dimension of coefficient matrix
+cat("Coefficient matrix dimensions:", dim(coef(ridge_fit)), "\n")
+
+# (ii) L2 norm at 50th and 60th lambda
+l2_50 <- sqrt(sum(coef(ridge_fit)[-1, 50]^2))
+l2_60 <- sqrt(sum(coef(ridge_fit)[-1, 60]^2))
+cat("L2 norm at lambda[50] =", round(lambda_grid[50], 4), ":", round(l2_50, 4), "\n")
+cat("L2 norm at lambda[60] =", round(lambda_grid[60], 4), ":", round(l2_60, 4), "\n")
+cat("Larger lambda => smaller L2 norm (more shrinkage)\n")
+
+# (iv) Test MSE for 50th and 60th lambda
+pred_50 <- predict(ridge_fit, s = lambda_grid[50], newx = X_test)
+pred_60 <- predict(ridge_fit, s = lambda_grid[60], newx = X_test)
+cat("Test MSE at lambda[50]:", round(mean((y_test - pred_50)^2), 2), "\n")
+cat("Test MSE at lambda[60]:", round(mean((y_test - pred_60)^2), 2), "\n")
+```
+
