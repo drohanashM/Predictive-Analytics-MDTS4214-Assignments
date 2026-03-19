@@ -1,0 +1,128 @@
+---
+title: "Predictive Analytics: Problem Sets 6"
+author: "Drohanash Majumdar, 704"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+if (!require(ISLR)) install.packages("ISLR")
+if (!require(leaps)) install.packages("leaps")
+
+library(ISLR)
+library(leaps)
+```
+
+# To demonstrate the application of subset selection methods
+
+Consider the “Hitters” data. For loading the data you need to install ISLR library. We wish to predict a baseball player’s salary on the basis of various predictors. So first we need to choose an optimal model.
+
+1. Clean the data by removing all rows that have missing value in any variable. You will be working with this clean data.
+```{r}
+data(Hitters)
+Hitters = na.omit(Hitters)
+cat("Dimensions after cleaning:", dim(Hitters), "\n")
+```
+
+2. Split the data randomly into train-test keeping 80% as training sample and remaining as test sample.
+```{r}
+set.seed(123)
+n = nrow(Hitters)
+train_idx = sample(1:n, size = floor(0.8 * n))
+train = Hitters[train_idx, ]
+test = Hitters[-train_idx, ]
+cat("Training size:", nrow(train), "| Test size:", nrow(test), "\n")
+```
+
+3. Perform the best subset selection on the training sample. While choosing the best model fit up to a 19 variable model. Choose the best model according to adjusted R squared, BIC, AIC and Cp values. In case the best model differs according to the selection criteria, report the best fitted
+model according to each selection criterion.
+```{r}
+predict_regsubsets <- function(object, newdata, id) {
+  form  = as.formula(object$call[[2]])
+  mat   = model.matrix(form, newdata)
+  coefi = coef(object, id = id)
+  mat[, names(coefi)] %*% coefi
+}
+
+get_mse = function(object, traindata, testdata, nvars) {
+  train_mat = model.matrix(Salary ~ ., traindata)
+  test_mat  = model.matrix(Salary ~ ., testdata)
+  
+  sapply(nvars, function(i) {
+    coefi      <- coef(object, id = i)
+    train_pred <- train_mat[, names(coefi)] %*% coefi
+    test_pred  <- test_mat[, names(coefi)]  %*% coefi
+    c(train_mse = mean((traindata$Salary - train_pred)^2),
+      test_mse  = mean((testdata$Salary  - test_pred)^2))
+  })
+}
+
+# Function to select best model per criterion and report MSEs
+report_best <- function(reg_obj, train_df, test_df, method_name) {
+  s <- summary(reg_obj)
+  
+  best_adjr2 <- which.max(s$adjr2)
+  best_bic   <- which.min(s$bic)
+  best_cp    <- which.min(s$cp)
+
+  n_tr <- nrow(train_df)
+  aic_vals <- n_tr * log(s$rss / n_tr) + 2 * (1:19 + 1)
+  best_aic  <- which.min(aic_vals)
+  
+  criteria <- c(AdjR2 = best_adjr2, BIC = best_bic, AIC = best_aic, Cp = best_cp)
+  cat("\n===", method_name, "===\n")
+  cat("Best model size by criterion:\n"); print(criteria)
+  
+  results <- data.frame(Criterion = names(criteria), Best_Size = as.integer(criteria),
+                        Train_MSE = NA, Test_MSE = NA)
+  
+  train_mat <- model.matrix(Salary ~ ., train_df)
+  test_mat  <- model.matrix(Salary ~ ., test_df)
+  
+  for (i in seq_len(nrow(results))) {
+    k     <- results$Best_Size[i]
+    coefs <- coef(reg_obj, id = k)
+    tr_p  <- train_mat[, names(coefs)] %*% coefs
+    te_p  <- test_mat[, names(coefs)]  %*% coefs
+    results$Train_MSE[i] <- mean((train_df$Salary - tr_p)^2)
+    results$Test_MSE[i]  <- mean((test_df$Salary  - te_p)^2)
+  }
+  
+  print(results)
+  invisible(results)
+}
+```
+
+## 3-4. Best Subset Selection
+
+```{r ps6-best-subset}
+reg_best <- regsubsets(Salary ~ ., data = train, nvmax = 19, method = "exhaustive")
+res_best <- report_best(reg_best, train, test, "Best Subset Selection")
+```
+
+## 5. Forward Stepwise Selection
+
+```{r ps6-forward}
+reg_fwd <- regsubsets(Salary ~ ., data = train, nvmax = 19, method = "forward")
+res_fwd <- report_best(reg_fwd, train, test, "Forward Stepwise Selection")
+```
+
+## 6. Backward Stepwise Selection
+
+```{r ps6-backward}
+reg_bwd <- regsubsets(Salary ~ ., data = train, nvmax = 19, method = "backward")
+res_bwd <- report_best(reg_bwd, train, test, "Backward Stepwise Selection")
+```
+
+## 7. Comparison of Three Methods
+
+```{r ps6-compare}
+cat("\n=== Summary Comparison ===\n")
+cat("\nBest Subset:\n");  print(res_best)
+cat("\nForward Stepwise:\n"); print(res_fwd)
+cat("\nBackward Stepwise:\n"); print(res_bwd)
+```
+
+**Interpretation:** All three methods tend to select similar models for most criteria (especially BIC and Cp which favor parsimony). Forward and Backward stepwise are computationally cheaper than Best Subset but may differ slightly in selected variables. Test MSE is the most reliable guide to generalization performance.
+
