@@ -1,0 +1,263 @@
+---
+title: "Predictive Analytics : Problem Set 8"
+author: "Drohanash Majumdar, 704"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  fig.width = 7,
+  fig.height = 5
+)
+library(ISLR)        
+library(ROCR)        
+library(class)       
+library(caret)       
+library(dplyr)
+library(ggplot2)
+```
+
+---
+
+###  1. Problem to demonstrate the fitting of a binary response variable using logistic regression
+
+(a) Consider the Weekly data available in the ISLR package of R. Use the data from 1990 to 2008 as train data and the data on 2009-2010 as test data.
+
+```{r}
+data(Weekly)
+
+train = Weekly %>% filter(Year <= 2008)
+test  = Weekly %>% filter(Year >= 2009)
+
+cat("Training observations:", nrow(train), "\n")
+cat("Test observations    :", nrow(test),  "\n")
+cat("\nTraining Direction distribution:\n")
+print(table(train$Direction))
+cat("\nTest Direction distribution:\n")
+print(table(test$Direction))
+```
+
+(b) Using the training data, fit a logistic regression with Direction as the response and the five lag variables plus Volume as predictors. Are there any significant predictors? If not, which of the tests is reporting the least p value. Interpret the coefficient corresponding to that test.
+```{r}
+logit_model = glm(Direction ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume, data   = train, family = binomial)
+
+summary(logit_model)
+```
+
+
+```{r}
+coef_table = summary(logit_model)$coefficients
+cat("P-values of predictors:\n")
+print(round(coef_table[, "Pr(>|z|)"], 4))
+
+min_p_var = rownames(coef_table)[which.min(coef_table[-1, "Pr(>|z|)"]) + 1]
+min_p_val = min(coef_table[-1, "Pr(>|z|)"])
+cat("\nPredictor with lowest p-value:", min_p_var,
+    "  (p =", round(min_p_val, 4), ")\n")
+
+lag2_coef = coef(logit_model)["Lag2"]
+cat("\nCoefficient for Lag2:", round(lag2_coef, 4), "\n")
+cat("Odds ratio for Lag2 :", round(exp(lag2_coef), 4), "\n")
+```
+
+**Comment on significance:**  Only `Lag2` has a marginally significant p-value (< 0.05). All other predictors are not statistically significant at the 5% level.
+
+**Interpretation of `Lag2` coefficient:** The coefficient of `Lag2` is positive, indicating that a one-unit increase in the percentage return two weeks ago is associated with higher log-odds of the market going **Up** this week. Specifically, for every one-unit increase in `Lag2`, the odds of the market going Up are multiplied by `exp(β_Lag2)` ≈ 1.058. This implies a modest positive carry-over effect from two weeks prior.
+
+(c) Estimate the odds of market going “up” at median values of the predictors.
+
+```{r}
+med_vals = train %>% summarise(Lag1   = median(Lag1), Lag2   = median(Lag2), Lag3   = median(Lag3), Lag4   = median(Lag4), Lag5   = median(Lag5), Volume = median(Volume))
+
+cat("Median values of predictors:\n")
+print(med_vals)
+
+pred_prob_med = predict(logit_model, newdata = med_vals, type = "response")
+
+odds_med = pred_prob_med / (1 - pred_prob_med)
+
+cat("\nPredicted P(Up | median predictors) :", round(pred_prob_med, 4), "\n")
+cat("Estimated Odds of 'Up' at medians   :", round(odds_med, 4), "\n")
+```
+
+**Interpretation:** At the median values of all six predictors, the estimated probability of the market going Up is approximately `r round(pred_prob_med, 3)`, giving odds of approximately `r round(odds_med, 3)` (i.e., roughly `r round(odds_med, 2)`:1 in favour of Up).
+
+(e) Using the fitted model and the predictor values from the test data, find an optimal cut point that minimizes T P R(1 − F P R). Report the confusion matrix corresponding to the optimal cut-point value. From the confusion matrix compute the test error rate.
+
+```{r}
+test_probs = predict(logit_model, newdata = test, type = "response")
+test_labels = ifelse(test$Direction == "Up", 1, 0)
+
+pred_test = prediction(test_probs, test_labels)
+perf_test = performance(pred_test, "tpr", "fpr")
+
+tpr_vals = perf_test@y.values[[1]]
+fpr_vals = perf_test@x.values[[1]]
+cuts = perf_test@alpha.values[[1]]
+
+criterion = tpr_vals * (1 - fpr_vals)
+opt_idx = which.min(criterion)
+opt_cut = cuts[opt_idx]
+
+cat("Optimal cut-point (minimises TPR*(1-FPR)):", round(opt_cut, 4), "\n")
+cat("TPR at optimal cut :", round(tpr_vals[opt_idx], 4), "\n")
+cat("FPR at optimal cut :", round(fpr_vals[opt_idx], 4), "\n")
+```
+
+```{r}
+pred_class = ifelse(test_probs >= opt_cut, "Up", "Down")
+pred_class = factor(pred_class, levels = c("Down", "Up"))
+true_class = factor(test$Direction,  levels = c("Down", "Up"))
+
+cm = confusionMatrix(pred_class, true_class, positive = "Up")
+print(cm)
+
+test_error_all = 1 - cm$overall["Accuracy"]
+cat("\nTest Error Rate (all 6 predictors):", round(test_error_all, 4), "\n")
+```
+
+(f) Is there any change in the test error rate if we have worked with only the two predictors lag 1 and lag 2?
+```{r}
+logit_lag12 = glm(Direction ~ Lag1 + Lag2, data = train, family = binomial)
+
+test_probs12 = predict(logit_lag12, newdata = test, type = "response")
+test_labels12 = ifelse(test$Direction == "Up", 1, 0)
+
+pred_test12 = prediction(test_probs12, test_labels12)
+perf_test12 = performance(pred_test12, "tpr", "fpr")
+
+tpr12 = perf_test12@y.values[[1]]
+fpr12 = perf_test12@x.values[[1]]
+cuts12 = perf_test12@alpha.values[[1]]
+
+crit12 = tpr12 * (1 - fpr12)
+opt_idx12 = which.min(crit12)
+opt_cut12 = cuts12[opt_idx12]
+
+pred_class12 = ifelse(test_probs12 >= opt_cut12, "Up", "Down")
+pred_class12 = factor(pred_class12, levels = c("Down", "Up"))
+
+cm12 = confusionMatrix(pred_class12, true_class, positive = "Up")
+print(cm12)
+
+test_error_lag12 = 1 - cm12$overall["Accuracy"]
+cat("\nTest Error Rate (Lag1 + Lag2 only):", round(test_error_lag12, 4), "\n")
+cat("Test Error Rate (all 6 predictors):", round(test_error_all,  4), "\n")
+```
+
+**Comment:** With only `Lag1` and `Lag2`, the test error rate is `r round(test_error_lag12, 4)`. Compare this with `r round(test_error_all, 4)` for the full 6-predictor model. The reduction (or similarity) suggests that the additional lag variables and `Volume` add little predictive value, and a parsimonious model with just the two most relevant lags performs at least as well.
+
+---
+
+### Problem 3: Problem to demonstrate the use of KNN classification
+
+(a) Refer to Problem 1. Fit a KNN classification model for K = 2, 5, 9. For each case, train the model using the training sample with all the predictors and test it on the basis of test data.
+
+```{r}
+pred_cols = c("Lag1", "Lag2", "Lag3", "Lag4", "Lag5", "Volume")
+
+X_train = scale(train[, pred_cols])
+X_test = scale(test[, pred_cols], center = attr(X_train, "scaled:center"), scale = attr(X_train, "scaled:scale"))
+
+y_train = train$Direction
+y_test = test$Direction
+
+K_vals = c(2, 5, 9)
+```
+
+```{r}
+set.seed(42)
+
+knn_results_all = lapply(K_vals, function(k) {
+  pred = knn(train = X_train, test = X_test, cl = y_train, k = k)
+  list(k = k, pred = pred)
+})
+```
+
+(b)  Compute the confusion matrix for each case and find the test error rate.
+
+```{r}
+y_test_factor = factor(y_test, levels = c("Down", "Up"))
+
+test_errors_all = numeric(length(K_vals))
+
+for (i in seq_along(knn_results_all)) {
+  res = knn_results_all[[i]]
+  cat("KNN with K =", res$k, "(All 6 Predictors)\n")
+  
+  pred_factor = factor(res$pred, levels = c("Down", "Up"))
+  cm_i = confusionMatrix(pred_factor, y_test_factor, positive = "Up")
+  print(cm_i$table)
+  
+  err = 1 - cm_i$overall["Accuracy"]
+  test_errors_all[i] = err
+  cat("Test Error Rate:", round(err, 4), "\n\n")
+}
+```
+
+**Summary Table — All Predictors**
+
+```{r knn_summary_all}
+knn_summary_all = data.frame(K = K_vals, Test_Error_Rate = round(test_errors_all, 4))
+print(knn_summary_all)
+```
+
+(c) How does KNN compare to the logistic regression?
+
+```{r}
+lr_test_error = round(test_error_all, 4)
+
+compare_df = data.frame(Method = c("Logistic Regression (6 predictors)", "KNN K=2 (6 predictors)", "KNN K=5 (6 predictors)", "KNN K=9 (6 predictors)"), Test_Error_Rate = c(lr_test_error, test_errors_all))
+print(compare_df)
+```
+
+**Comment:**   Logistic regression tends to be more stable for binary classification on financial data like `Weekly`, as it makes explicit use of the linear decision boundary assumption. KNN is a non-parametric method and can be sensitive to the choice of K, especially when predictors have noise (as is the case with market return lags). For small K (e.g., K=2), KNN tends to overfit, resulting in higher test error. As K increases, the model smooths out and may perform comparably to logistic regression. Overall, neither method dramatically outperforms random guessing on this dataset, reflecting the weak predictability of weekly returns.
+
+(d) Compute the test error rates for each K, if instead of choosing all predictors we choose only lag 1 and lag 2.
+
+```{r}
+pred_cols2 = c("Lag1", "Lag2")
+
+X_train2 = scale(train[, pred_cols2])
+X_test2 = scale(test[, pred_cols2], center = attr(X_train2, "scaled:center"), scale  = attr(X_train2, "scaled:scale"))
+```
+
+```{r}
+set.seed(42)
+
+test_errors_lag12 = numeric(length(K_vals))
+
+for (i in seq_along(K_vals)) {
+  k = K_vals[i]
+  pred_k = knn(train = X_train2, test = X_test2, cl = y_train, k = k)
+  pred_k_factor = factor(pred_k, levels = c("Down", "Up"))
+  cm_k = confusionMatrix(pred_k_factor, y_test_factor, positive = "Up")
+  err = 1 - cm_k$overall["Accuracy"]
+  test_errors_lag12[i] = err
+  
+  cat("KNN with K =", k, "(Lag1 + Lag2 only)\n")
+  print(cm_k$table)
+  cat("Test Error Rate:", round(err, 4), "\n\n")
+}
+```
+
+**Summary Table — Lag1 & Lag2 Only**
+
+```{r}
+knn_summary_lag12 <- data.frame(
+  K               = K_vals,
+  All_Predictors  = round(test_errors_all,  4),
+  Lag1_Lag2_Only  = round(test_errors_lag12, 4)
+)
+cat("Test Error Rate Comparison — All Predictors vs Lag1+Lag2:\n")
+print(knn_summary_lag12)
+```
+
+**Comment:**  Using only `Lag1` and `Lag2` as predictors for KNN can sometimes improve performance compared to using all six predictors, because irrelevant predictors introduce noise in the distance computation used by KNN.  If `Volume` and higher-order lags add noise rather than signal, dimensionality reduction to `Lag1` + `Lag2` improves the nearest-neighbour search and reduces the test error rate. The optimal K may also differ across the two predictor sets.
+
+---
