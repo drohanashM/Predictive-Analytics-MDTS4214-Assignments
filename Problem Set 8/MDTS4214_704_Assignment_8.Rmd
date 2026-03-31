@@ -87,7 +87,7 @@ cat("Estimated Odds of 'Up' at medians   :", round(odds_med, 4), "\n")
 
 **Interpretation:** At the median values of all six predictors, the estimated probability of the market going Up is approximately `r round(pred_prob_med, 3)`, giving odds of approximately `r round(odds_med, 3)` (i.e., roughly `r round(odds_med, 2)`:1 in favour of Up).
 
-(e) Using the fitted model and the predictor values from the test data, find an optimal cut point that minimizes T P R(1 − F P R). Report the confusion matrix corresponding to the optimal cut-point value. From the confusion matrix compute the test error rate.
+(e) Using the fitted model and the predictor values from the test data, find an optimal cut point that maximizes T P R(1 − F P R). Report the confusion matrix corresponding to the optimal cut-point value. From the confusion matrix compute the test error rate.
 
 ```{r}
 test_probs = predict(logit_model, newdata = test, type = "response")
@@ -101,10 +101,10 @@ fpr_vals = perf_test@x.values[[1]]
 cuts = perf_test@alpha.values[[1]]
 
 criterion = tpr_vals * (1 - fpr_vals)
-opt_idx = which.min(criterion)
+opt_idx = which.max(criterion)
 opt_cut = cuts[opt_idx]
 
-cat("Optimal cut-point (minimises TPR*(1-FPR)):", round(opt_cut, 4), "\n")
+cat("Optimal cut-point (maximises TPR*(1-FPR)):", round(opt_cut, 4), "\n")
 cat("TPR at optimal cut :", round(tpr_vals[opt_idx], 4), "\n")
 cat("FPR at optimal cut :", round(fpr_vals[opt_idx], 4), "\n")
 ```
@@ -136,7 +136,7 @@ fpr12 = perf_test12@x.values[[1]]
 cuts12 = perf_test12@alpha.values[[1]]
 
 crit12 = tpr12 * (1 - fpr12)
-opt_idx12 = which.min(crit12)
+opt_idx12 = which.max(crit12)
 opt_cut12 = cuts12[opt_idx12]
 
 pred_class12 = ifelse(test_probs12 >= opt_cut12, "Up", "Down")
@@ -150,7 +150,9 @@ cat("\nTest Error Rate (Lag1 + Lag2 only):", round(test_error_lag12, 4), "\n")
 cat("Test Error Rate (all 6 predictors):", round(test_error_all,  4), "\n")
 ```
 
-**Comment:** With only `Lag1` and `Lag2`, the test error rate is `r round(test_error_lag12, 4)`. Compare this with `r round(test_error_all, 4)` for the full 6-predictor model. The reduction (or similarity) suggests that the additional lag variables and `Volume` add little predictive value, and a parsimonious model with just the two most relevant lags performs at least as well.
+**Comment:** When maximizing TPR*(1−FPR), the selected cut-point balances sensitivity and specificity. The resulting test error rate is `r round(test_error_all, 4)`. 
+
+Comparing with the model using only Lag1 and Lag2 (`r round(test_error_lag12, 4)`), we observe that the simpler model performs similarly (or better). This indicates that additional predictors do not significantly improve predictive performance, and a parsimonious model is sufficient.
 
 ---
 
